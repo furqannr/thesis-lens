@@ -5,6 +5,14 @@ from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from io import BytesIO
 
+import smtplib, ssl
+from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
+from email import encoders
+
 import markdown2
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -88,26 +96,155 @@ def save_to_pdf(markdown_text):
 
     return pdf_output
 
+def send_email(to_email, attachment=None):
+    email_sender = "mmaazkhanhere@gmail.com"
+    email_password = "jyhstqcntehyovve"
+
+    if not email_sender or not email_password:
+        st.error('Email credentials not found')
+        return False
+    
+    subject = 'Thesis Report'
+    content = """
+        Hello customer! Thank you for using our service. We
+        hope it acted as you supposed it would. Here is the
+        detailed report of your thesis. Wish you good luck in your
+        future endeavors.
+    """
+
+    # Create the email message
+    msg = MIMEMultipart()
+    msg['From'] = email_sender
+    msg['To'] = to_email
+    msg['Subject'] = subject
+    body = MIMEText(content, 'plain')
+    msg.attach(body)
+
+    if attachment:
+        part = MIMEBase('application', 'octet-stream')
+        part.set_payload(attachment.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', f'attachment; filename= Thesis_Report.pdf')
+        msg.attach(part)
+
+    context = ssl.create_default_context()
+
+    try:
+        with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as smtp:
+            smtp.login(email_sender, email_password)
+            smtp.sendmail(email_sender, to_email, msg.as_string())
+        return True
+    except Exception as e:
+        st.error(f"Failed to send email to {to_email}. Error: {str(e)}")
+        return False
+
+    # em = EmailMessage()
+    # em['From'] = email_sender
+    # em['To'] = to_emails
+    # em['Subject'] = subject
+    # em.set_content
+
+    # context = ssl.create_default_context()
+
+    # with smtplib.SMTP_SSL('smtp.gmail.com', 465, context=context) as smtp:
+    #     smtp.login(email_sender, email_password)
+    #     smtp.sendmail(email_sender, to_emails, em.as_string())
+
+# def send_email(subject, body, to_emails, attachment=None):
+#     from_email = os.environ.get("EMAIL_ADDRESS")
+#     from_password = os.environ.get("EMAIL_PASSWORD")
+#     smtp_server = os.environ.get("SMTP_SERVER", "smtp.gmail.com")
+#     smtp_port = os.environ.get("SMTP_PORT", 587)
+
+#     if not from_email or not from_password:
+#         st.error("Email credentials not found in environment variables.")
+#         return False
+
+#     msg = MIMEMultipart()
+#     msg['From'] = from_email
+#     msg['To'] = ', '.join(to_emails)
+#     msg['Subject'] = subject
+
+#     msg.attach(MIMEText(body, 'plain'))
+
+#     if attachment:
+#         part = MIMEBase('application', 'octet-stream')
+#         part.set_payload(attachment.read())
+#         encoders.encode_base64(part)
+#         part.add_header('Content-Disposition', f'attachment; filename= Thesis_Report.pdf')
+#         msg.attach(part)
+
+#     try:
+#         server = smtplib.SMTP(smtp_server, smtp_port)
+#         server.starttls()
+#         server.login(from_email, from_password)
+#         text = msg.as_string()
+#         server.sendmail(from_email, to_emails, text)
+#         server.quit()
+#         return True
+#     except Exception as e:
+#         st.error(f"Failed to send email. Error: {str(e)}")
+#         return False
+
 
 st.title("ThesisLens")
+
+# Initialize email list in session state if it doesn't exist
+if 'email_list' not in st.session_state:
+    st.session_state.email_list = []
+
+# Display warning or success message depending on emails 
+if st.session_state.email_list:
+    st.success("Emails added. You can now submit the report.")
+else:
+    st.warning("Please add at least one email.")
+
+# Input field for entering email
+new_email = st.text_input('Enter email address:')
+
+# Button to add the email to the list
+if st.button('Add Email'):
+    if new_email:  # Check if the email field is not empty
+        st.session_state.email_list.append(new_email)
+
+# Display the current list of emails if any
+if st.session_state.email_list:
+    st.write("Emails to send the report to:")
+    for idx, email in enumerate(st.session_state.email_list):
+        st.write(f"{idx + 1}. {email}")
 
 file = st.file_uploader("Upload your thesis file here", type='pdf')
 
 submit = st.button('Analyze Thesis')
 
 if submit and file is not None:
-    file_content = extract_text_from_pdf(file)  # Extract text from PDF file
-    response = gemini_model_interaction(file_content)  # Get the response from the AI model
-    
-    st.write(response)  # Display the response on the page
-    
-    # Convert response to PDF
-    pdf_file = save_to_pdf(response)
-    
-    # Provide a download link for the PDF file
-    st.download_button(
-        label="Download Report as PDF",
-        data=pdf_file,
-        file_name="Thesis_Report.pdf",
-        mime="application/pdf"
-    )
+    if len(st.session_state.email_list) == 0:
+        st.error("Please enter at least one email address")
+    else:
+        file_content = extract_text_from_pdf(file)  # Extract text from PDF file
+        response = gemini_model_interaction(file_content)  # Get the response from the AI model
+        
+        st.write(response)  # Display the response on the page
+        
+        # Convert response to PDF
+        pdf_file = save_to_pdf(response)
+
+        # send the report via email
+        subject = "Thesis Report"
+        body = "Please find attached the thesis report generated by ThesisLens."
+        
+        email_lists = st.session_state.email_list  # Use the email list from session state
+        for email in email_lists:
+            if send_email(email, attachment=pdf_file):
+                st.success(f"Email sent successfully to {email}!")
+            else:
+                st.error(f"Failed to send the email to {email}.")
+
+        
+        # Provide a download link for the PDF file
+        st.download_button(
+            label="Download Report as PDF",
+            data=pdf_file,
+            file_name="Thesis_Report.pdf",
+            mime="application/pdf"
+        )
