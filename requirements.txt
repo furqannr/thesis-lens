@@ -3,3 +3,8 @@ streamlit==1.37.0
 google-generativeai
 PyPDF2
 fpdf==1.7.2
+langchain
+markdown2
+reportlab
+beautifulsoup4
+langchain-google-genai
